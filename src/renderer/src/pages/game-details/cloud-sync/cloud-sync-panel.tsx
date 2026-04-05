@@ -74,7 +74,7 @@ export function CloudSyncPanel({
   const { showSuccessToast, showErrorToast } = useToast();
 
   const userDetails = useAppSelector((state) => state.userDetails.userDetails);
-  const backupsPerGameLimit = userDetails?.quirks?.backupsPerGameLimit ?? 0;
+  const hasReachedLimit = false;
 
   const handleDeleteArtifactClick = async (gameArtifactId: string) => {
     setDeletingArtifact(true);
@@ -183,11 +183,6 @@ export function CloudSyncPanel({
 
   const disableActions =
     uploadingBackup || restoringBackup || deletingArtifact || freezingArtifact;
-
-  if (false) {
-    // Subscription gate removed – local cloud save is available to all users
-    return null;
-  }
 
   return (
     <>
