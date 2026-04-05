@@ -1,17 +1,8 @@
 import axios, { AxiosError, AxiosInstance } from "axios";
-import { WindowManager } from "./window-manager";
-import url from "url";
-import { uploadGamesBatch } from "./library-sync";
-import { clearGamesRemoteIds } from "./library-sync/clear-games-remote-id";
 import { networkLogger as logger } from "./logger";
 import { UserNotLoggedInError, SubscriptionRequiredError } from "@shared";
-import { omit } from "lodash-es";
 import { appVersion } from "@main/constants";
-import { getUserData } from "./user/get-user-data";
-import { db } from "@main/level";
-import { levelKeys } from "@main/level/sublevels";
 import type { Auth, User } from "@types";
-import { WSClient } from "./ws";
 
 export interface HydraApiOptions {
   needsAuth?: boolean;
@@ -53,67 +44,25 @@ export class HydraApi {
   }
 
   static async handleExternalAuth(uri: string) {
-    const { payload } = url.parse(uri, true).query;
-
-    const decodedBase64 = atob(payload as string);
-    const jsonData = JSON.parse(decodedBase64);
-
-    const { accessToken, expiresIn, refreshToken, workwondersJwt } = jsonData;
-
-    const now = new Date();
-
-    const tokenExpirationTimestamp =
-      now.getTime() +
-      this.secondsToMilliseconds(expiresIn) -
-      this.EXPIRATION_OFFSET_IN_MS;
-
-    this.userAuth = {
-      authToken: accessToken,
-      refreshToken: refreshToken,
-      expirationTimestamp: tokenExpirationTimestamp,
-      subscription: null,
-    };
-
-    logger.log(
-      "Sign in received. Token expiration timestamp:",
-      tokenExpirationTimestamp
-    );
-
-    db.put<string, Auth>(
-      levelKeys.auth,
-      {
-        accessToken,
-        refreshToken,
-        tokenExpirationTimestamp,
-        workwondersJwt,
-      },
-      { valueEncoding: "json" }
-    );
-
-    await getUserData().then((userDetails) => {
-      if (userDetails?.subscription) {
-        this.userAuth.subscription = {
-          expiresAt: userDetails.subscription.expiresAt
-            ? new Date(userDetails.subscription.expiresAt)
-            : null,
-        };
-      }
-    });
-
-    if (WindowManager.mainWindow) {
-      WindowManager.mainWindow.webContents.send("on-signin");
-      await clearGamesRemoteIds();
-      uploadGamesBatch();
-
-      WSClient.close();
-      WSClient.connect();
-
-      const { syncDownloadSourcesFromApi } = await import("./user");
-      syncDownloadSourcesFromApi();
-    }
+    // Authentication disabled in local-only mode
+    logger.log("Authentication is disabled - working in local-only mode");
+    return;
   }
 
   static handleSignOut() {
+    // Sign out disabled in local-only mode
+    logger.log("Sign out is disabled - working in local-only mode");
+    return;
+  }
+
+  static async setupApi() {
+    // API setup simplified for local-only mode
+    this.instance = axios.create({
+      baseURL: import.meta.env.MAIN_VITE_API_URL,
+      headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
+    });
+
+    // Initialize with empty auth - working in local-only mode
     this.userAuth = {
       authToken: "",
       refreshToken: "",
@@ -121,112 +70,7 @@ export class HydraApi {
       subscription: null,
     };
 
-    this.post("/auth/logout", {}, { needsAuth: false }).catch(() => {});
-  }
-
-  static async setupApi() {
-    this.instance = axios.create({
-      baseURL: import.meta.env.MAIN_VITE_API_URL,
-      headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
-    });
-
-    if (this.ADD_LOG_INTERCEPTOR) {
-      this.instance.interceptors.request.use(
-        (request) => {
-          logger.log(" ---- REQUEST -----");
-          const data = Array.isArray(request.data)
-            ? request.data
-            : omit(request.data, ["refreshToken"]);
-          logger.log(request.method, request.url, request.params, data);
-          return request;
-        },
-        (error) => {
-          logger.error("request error", error);
-          return Promise.reject(error);
-        }
-      );
-      this.instance.interceptors.response.use(
-        (response) => {
-          logger.log(" ---- RESPONSE -----");
-          const data = Array.isArray(response.data)
-            ? response.data
-            : omit(response.data, ["username", "accessToken", "refreshToken"]);
-          logger.log(
-            response.status,
-            response.config.method,
-            response.config.url,
-            data
-          );
-          return response;
-        },
-        (error) => {
-          logger.error(" ---- RESPONSE ERROR -----");
-          const { config } = error;
-
-          const data = JSON.parse(config.data ?? null);
-
-          logger.error(
-            config.method,
-            config.baseURL,
-            config.url,
-            omit(config.headers, [
-              "accessToken",
-              "refreshToken",
-              "Authorization",
-            ]),
-            Array.isArray(data)
-              ? data
-              : omit(data, ["accessToken", "refreshToken"])
-          );
-          if (error.response) {
-            logger.error(
-              "Response error:",
-              error.response.status,
-              error.response.data
-            );
-
-            return Promise.reject(error as Error);
-          }
-
-          if (error.request) {
-            const errorData = error.toJSON();
-            logger.error("Request error:", errorData.code, errorData.message);
-            return Promise.reject(
-              new Error(
-                `Request failed with ${errorData.code} ${errorData.message}`
-              )
-            );
-          }
-
-          logger.error("Error", error.message);
-          return Promise.reject(error as Error);
-        }
-      );
-    }
-
-    const result = await db.getMany<string>([levelKeys.auth, levelKeys.user], {
-      valueEncoding: "json",
-    });
-
-    const userAuth = result.at(0) as Auth | undefined;
-    const user = result.at(1) as User | undefined;
-
-    this.userAuth = {
-      authToken: userAuth?.accessToken ?? "",
-      refreshToken: userAuth?.refreshToken ?? "",
-      expirationTimestamp: userAuth?.tokenExpirationTimestamp ?? 0,
-      subscription: user?.subscription
-        ? { expiresAt: user.subscription?.expiresAt }
-        : null,
-    };
-
-    const updatedUserData = await getUserData();
-
-    this.userAuth.subscription = updatedUserData?.subscription
-      ? {
-          expiresAt: updatedUserData.subscription.expiresAt,
-        }
-      : null;
+    logger.log("HydraApi initialized in local-only mode");
   }
 
   private static sendSignOutEvent() {
@@ -407,39 +251,8 @@ export class HydraApi {
     games: Array<{ shop: string; objectId: string }>,
     since: string
   ) {
-    logger.info("HydraApi.checkDownloadSourcesChanges called with:", {
-      downloadSourceIds,
-      gamesCount: games.length,
-      since,
-      isLoggedIn: this.isLoggedIn(),
-    });
-
-    try {
-      const result = await this.post<
-        Array<{
-          shop: string;
-          objectId: string;
-          newDownloadOptionsCount: number;
-          downloadSourceIds: string[];
-        }>
-      >(
-        "/download-sources/changes",
-        {
-          downloadSourceIds,
-          games,
-          since,
-        },
-        { needsAuth: true }
-      );
-
-      logger.info(
-        "HydraApi.checkDownloadSourcesChanges completed successfully:",
-        result
-      );
-      return result;
-    } catch (error) {
-      logger.error("HydraApi.checkDownloadSourcesChanges failed:", error);
-      throw error;
-    }
+    logger.info("checkDownloadSourcesChanges disabled in local-only mode");
+    // Return empty array as no changes can be fetched from API
+    return [];
   }
 }

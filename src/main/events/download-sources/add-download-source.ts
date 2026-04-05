@@ -1,8 +1,8 @@
 import { registerEvent } from "../register-event";
-import { HydraApi } from "@main/services/hydra-api";
 import { downloadSourcesSublevel } from "@main/level";
 import type { DownloadSource } from "@types";
 import { logger } from "@main/services";
+import { randomUUID } from "crypto";
 
 const addDownloadSource = async (
   _event: Electron.IpcMainInvokeEvent,
@@ -16,29 +16,23 @@ const addDownloadSource = async (
       throw new Error("Download source with this URL already exists");
     }
 
-    const downloadSource = await HydraApi.post<DownloadSource>(
-      "/download-sources",
-      {
-        url,
-      },
-      { needsAuth: false }
-    );
-
-    if (HydraApi.isLoggedIn() && HydraApi.hasActiveSubscription()) {
-      try {
-        await HydraApi.post("/profile/download-sources", {
-          urls: [url],
-        });
-      } catch (error) {
-        logger.error("Failed to add download source to profile:", error);
-      }
-    }
+    // Create download source locally without API call
+    const downloadSource: DownloadSource = {
+      id: randomUUID(),
+      name: new URL(url).hostname || "Custom Source",
+      url,
+      status: "ACTIVE",
+      downloadCount: 0,
+      createdAt: new Date().toISOString(),
+    };
 
     await downloadSourcesSublevel.put(downloadSource.id, {
       ...downloadSource,
-      isRemote: true,
+      isRemote: false, // Local source, not from API
       createdAt: new Date().toISOString(),
     });
+
+    logger.log(`Added local download source: ${downloadSource.url}`);
 
     return downloadSource;
   } catch (error) {

@@ -107,17 +107,7 @@ export class CloudSync {
     downloadOptionTitle: string | null,
     label?: string
   ) {
-    const hasActiveSubscription = await db
-      .get<string, User>(levelKeys.user, { valueEncoding: "json" })
-      .then((user) => {
-        const expiresAt = new Date(user?.subscription?.expiresAt ?? 0);
-        return expiresAt > new Date();
-      });
-
-    if (!hasActiveSubscription) {
-      throw new SubscriptionRequiredError();
-    }
-
+    // Subscription check removed - local backups are always available
     const game = await gamesSublevel.get(levelKeys.game(shop, objectId));
     const effectiveWinePrefixPath = Wine.getEffectivePrefixPath(
       game?.winePrefixPath,
@@ -132,35 +122,43 @@ export class CloudSync {
 
     const stat = await fs.promises.stat(bundleLocation);
 
-    const { uploadUrl } = await HydraApi.post<{
-      id: string;
-      uploadUrl: string;
-    }>("/profile/games/artifacts", {
-      artifactLengthInBytes: stat.size,
-      shop,
-      objectId,
-      hostname: os.hostname(),
-      winePrefixPath: effectiveWinePrefixPath
-        ? fs.existsSync(effectiveWinePrefixPath)
-          ? fs.realpathSync(effectiveWinePrefixPath)
-          : effectiveWinePrefixPath
-        : null,
-      homeDir: this.getWindowsLikeUserProfilePath(effectiveWinePrefixPath),
-      downloadOptionTitle,
-      platform: process.platform,
-      label,
-    });
+    // Save backup locally instead of uploading to cloud
+    const localBackupsDir = path.join(backupsPath, "saved");
+    if (!fs.existsSync(localBackupsDir)) {
+      await fs.promises.mkdir(localBackupsDir, { recursive: true });
+    }
 
-    const fileBuffer = await fs.promises.readFile(bundleLocation);
+    const backupFileName = `${shop}-${objectId}-${Date.now()}.tar`;
+    const localBackupPath = path.join(localBackupsDir, backupFileName);
 
-    await axios.put(uploadUrl, fileBuffer, {
-      headers: {
-        "Content-Type": "application/tar",
-      },
-      onUploadProgress: (progressEvent) => {
-        logger.log(progressEvent);
-      },
-    });
+    // Copy the tar file to the local backups directory
+    await fs.promises.copyFile(bundleLocation, localBackupPath);
+
+    logger.log(`Backup saved locally: ${localBackupPath}`);
+
+    // Store backup metadata in a JSON file
+    const metadataPath = path.join(localBackupsDir, `${shop}-${objectId}-${Date.now()}.json`);
+    await fs.promises.writeFile(
+      metadataPath,
+      JSON.stringify({
+        id: crypto.randomUUID(),
+        shop,
+        objectId,
+        hostname: os.hostname(),
+        winePrefixPath: effectiveWinePrefixPath
+          ? fs.existsSync(effectiveWinePrefixPath)
+            ? fs.realpathSync(effectiveWinePrefixPath)
+            : effectiveWinePrefixPath
+          : null,
+        homeDir: this.getWindowsLikeUserProfilePath(effectiveWinePrefixPath),
+        downloadOptionTitle,
+        platform: process.platform,
+        label: label || this.getBackupLabel(false),
+        size: stat.size,
+        createdAt: new Date().toISOString(),
+        backupFile: backupFileName,
+      }, null, 2)
+    );
 
     WindowManager.mainWindow?.webContents.send(
       `on-upload-complete-${objectId}-${shop}`,
@@ -170,7 +168,7 @@ export class CloudSync {
     try {
       await fs.promises.unlink(bundleLocation);
     } catch (error) {
-      logger.error("Failed to remove tar file", { bundleLocation, error });
+      logger.error("Failed to remove temporary tar file", { bundleLocation, error });
     }
   }
 }

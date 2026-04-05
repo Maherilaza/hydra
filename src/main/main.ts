@@ -14,13 +14,10 @@ import {
   AllDebridClient,
   DownloadManager,
   HydraApi,
-  uploadGamesBatch,
   startMainLoop,
   Ludusavi,
   Lock,
   DeckyPlugin,
-  DownloadSourcesChecker,
-  WSClient,
   logger,
 } from "@main/services";
 import { migrateDownloadSources } from "./helpers/migrate-download-sources";
@@ -83,19 +80,13 @@ export const loadState = async () => {
     DeckyPlugin.checkAndUpdateIfOutdated();
   }
 
-  await HydraApi.setupApi().then(async () => {
-    uploadGamesBatch();
-    void migrateDownloadSources();
-
-    const { syncDownloadSourcesFromApi } = await import("./services/user");
-    void syncDownloadSourcesFromApi();
-
-    // Check for new download options on startup (if enabled)
-    (async () => {
-      await DownloadSourcesChecker.checkForChanges();
-    })();
-    WSClient.connect();
-  });
+  await HydraApi.setupApi();
+  // API integration disabled - working in local-only mode
+  // uploadGamesBatch();
+  void migrateDownloadSources();
+  // syncDownloadSourcesFromApi() - disabled
+  // DownloadSourcesChecker.checkForChanges() - disabled
+  // WSClient.connect() - disabled
 
   const downloads = await downloadsSublevel
     .values()
