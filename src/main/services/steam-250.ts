@@ -1,47 +1,54 @@
 import axios from "axios";
-import { JSDOM } from "jsdom";
-
 import type { Steam250Game } from "@types";
 
-export const requestSteam250 = async (path: string) => {
-  return axios
-    .get(`https://steam250.com${path}`)
-    .then((response) => {
-      const { window } = new JSDOM(response.data);
-      const { document } = window;
+interface SteamFeaturedItem {
+  id: number;
+  name: string;
+}
 
-      return Array.from(document.querySelectorAll("a[data-title]"))
-        .map(($title) => {
-          const steamGameUrl = ($title as HTMLAnchorElement).href;
-          if (!steamGameUrl) return null;
+interface SteamFeaturedCategory {
+  name: string;
+  items: SteamFeaturedItem[];
+}
 
-          return {
-            title: $title.getAttribute("data-title") || "",
-            objectId: steamGameUrl.split("/").pop(),
-          } as Steam250Game;
-        })
-        .filter((game) => game != null);
-    })
-    .catch((_) => [] as Steam250Game[]);
-};
+interface SteamFeaturedCategoriesResponse {
+  top_sellers?: SteamFeaturedCategory;
+  new_releases?: SteamFeaturedCategory;
+  specials?: SteamFeaturedCategory;
+  coming_soon?: SteamFeaturedCategory;
+}
 
-const steam250Paths = [
-  "/hidden_gems",
-  `/${new Date().getFullYear()}`,
-  "/top250",
-  "/most_played",
-];
+export const getSteam250List = async (): Promise<Steam250Game[]> => {
+  try {
+    const response = await axios.get<SteamFeaturedCategoriesResponse>(
+      "https://store.steampowered.com/api/featuredcategories/",
+      { timeout: 15_000 }
+    );
 
-export const getSteam250List = async () => {
-  const gamesList = (
-    await Promise.all(steam250Paths.map((path) => requestSteam250(path)))
-  ).flat();
+    const data = response.data;
+    const categories = [
+      data.top_sellers,
+      data.new_releases,
+      data.specials,
+      data.coming_soon,
+    ].filter(Boolean) as SteamFeaturedCategory[];
 
-  const gamesMap: Map<string, Steam250Game> = gamesList.reduce((map, item) => {
-    if (item) map.set(item.objectId, item);
+    const gamesMap = new Map<string, Steam250Game>();
 
-    return map;
-  }, new Map());
+    for (const category of categories) {
+      for (const item of category.items ?? []) {
+        const objectId = String(item.id);
+        if (!gamesMap.has(objectId)) {
+          gamesMap.set(objectId, {
+            title: item.name,
+            objectId,
+          });
+        }
+      }
+    }
 
-  return [...gamesMap.values()];
+    return [...gamesMap.values()];
+  } catch (_err) {
+    return [];
+  }
 };

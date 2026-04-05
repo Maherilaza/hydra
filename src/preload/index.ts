@@ -397,6 +397,40 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("downloadGameArtifact", objectId, shop, gameArtifactId),
   getGameArtifacts: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke("getGameArtifacts", objectId, shop),
+  deleteGameArtifact: (
+    objectId: string,
+    shop: GameShop,
+    gameArtifactId: string
+  ) =>
+    ipcRenderer.invoke("deleteGameArtifact", objectId, shop, gameArtifactId),
+  renameGameArtifact: (
+    objectId: string,
+    shop: GameShop,
+    gameArtifactId: string,
+    label: string
+  ) =>
+    ipcRenderer.invoke(
+      "renameGameArtifact",
+      objectId,
+      shop,
+      gameArtifactId,
+      label
+    ),
+  toggleArtifactFreeze: (
+    objectId: string,
+    shop: GameShop,
+    gameArtifactId: string,
+    freeze: boolean
+  ) =>
+    ipcRenderer.invoke(
+      "toggleArtifactFreeze",
+      objectId,
+      shop,
+      gameArtifactId,
+      freeze
+    ),
+  getGameRepacks: (objectId: string, shop: GameShop) =>
+    ipcRenderer.invoke("getGameRepacks", objectId, shop),
   getGameBackupPreview: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke("getGameBackupPreview", objectId, shop),
   selectGameBackupPath: (

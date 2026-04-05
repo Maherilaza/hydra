@@ -1,83 +1,106 @@
 import { registerEvent } from "../register-event";
-import { HydraApi } from "@main/services";
 import fs from "node:fs";
 import path from "node:path";
 import type { UpdateProfileRequest, UserProfile } from "@types";
-import { omit } from "lodash-es";
-import axios from "axios";
-import { fileTypeFromFile } from "file-type";
+import { db, levelKeys } from "@main/level";
+import type { User } from "@types";
+import { ASSETS_PATH } from "@main/constants";
+import { logger } from "@main/services";
 
-export const patchUserProfile = async (updateProfile: UpdateProfileRequest) => {
-  return HydraApi.patch<UserProfile>("/profile", updateProfile);
-};
-
-const uploadImage = async (
+const copyImageLocally = async (
   type: "profile-image" | "background-image",
   imagePath: string
-) => {
-  const stat = fs.statSync(imagePath);
-  const fileBuffer = fs.readFileSync(imagePath);
-  const fileSizeInBytes = stat.size;
-
-  const response = await HydraApi.post<{ presignedUrl: string }>(
-    `/presigned-urls/${type}`,
-    {
-      imageExt: path.extname(imagePath).slice(1),
-      imageLength: fileSizeInBytes,
-    }
-  );
-
-  const mimeType = await fileTypeFromFile(imagePath);
-
-  await axios.put(response.presignedUrl, fileBuffer, {
-    headers: {
-      "Content-Type": mimeType?.mime,
-    },
-  });
-
-  if (type === "background-image") {
-    return response["backgroundImageUrl"];
+): Promise<string | null> => {
+  try {
+    const dir = path.join(ASSETS_PATH, "profile");
+    await fs.promises.mkdir(dir, { recursive: true });
+    const ext = path.extname(imagePath);
+    const fileName = `${type}${ext}`;
+    const destPath = path.join(dir, fileName);
+    await fs.promises.copyFile(imagePath, destPath);
+    return `file://${destPath}`;
+  } catch (error) {
+    logger.error(`Failed to copy ${type}:`, error);
+    return null;
   }
-
-  return response["profileImageUrl"];
 };
 
 const updateProfile = async (
   _event: Electron.IpcMainInvokeEvent,
-  updateProfile: UpdateProfileRequest
-) => {
-  const payload = omit(updateProfile, [
-    "profileImageUrl",
-    "backgroundImageUrl",
-  ]);
+  updateProfileData: UpdateProfileRequest
+): Promise<UserProfile> => {
+  let profileImageUrl: string | null | undefined = undefined;
+  let backgroundImageUrl: string | null | undefined = undefined;
 
-  if (updateProfile.profileImageUrl !== undefined) {
-    if (updateProfile.profileImageUrl === null) {
-      payload["profileImageUrl"] = null;
+  if (updateProfileData.profileImageUrl !== undefined) {
+    if (updateProfileData.profileImageUrl === null) {
+      profileImageUrl = null;
     } else {
-      const profileImageUrl = await uploadImage(
+      profileImageUrl = await copyImageLocally(
         "profile-image",
-        updateProfile.profileImageUrl
-      ).catch(() => undefined);
-
-      payload["profileImageUrl"] = profileImageUrl;
+        updateProfileData.profileImageUrl
+      );
     }
   }
 
-  if (updateProfile.backgroundImageUrl !== undefined) {
-    if (updateProfile.backgroundImageUrl === null) {
-      payload["backgroundImageUrl"] = null;
+  if (updateProfileData.backgroundImageUrl !== undefined) {
+    if (updateProfileData.backgroundImageUrl === null) {
+      backgroundImageUrl = null;
     } else {
-      const backgroundImageUrl = await uploadImage(
+      backgroundImageUrl = await copyImageLocally(
         "background-image",
-        updateProfile.backgroundImageUrl
-      ).catch(() => undefined);
-
-      payload["backgroundImageUrl"] = backgroundImageUrl;
+        updateProfileData.backgroundImageUrl
+      );
     }
   }
 
-  return patchUserProfile(payload);
+  let user: User | null = null;
+  try {
+    user = await db.get<string, User>(levelKeys.user, {
+      valueEncoding: "json",
+    });
+  } catch (_err) {
+    /* user may not exist yet */
+  }
+
+  const updatedUser: User = {
+    id: user?.id ?? "local",
+    displayName: updateProfileData.displayName ?? user?.displayName ?? "",
+    profileImageUrl:
+      profileImageUrl !== undefined
+        ? profileImageUrl
+        : (user?.profileImageUrl ?? null),
+    backgroundImageUrl:
+      backgroundImageUrl !== undefined
+        ? backgroundImageUrl
+        : (user?.backgroundImageUrl ?? null),
+    subscription: user?.subscription ?? null,
+  };
+
+  await db.put<string, User>(levelKeys.user, updatedUser, {
+    valueEncoding: "json",
+  });
+
+  return {
+    id: updatedUser.id,
+    displayName: updatedUser.displayName,
+    profileImageUrl: updatedUser.profileImageUrl,
+    backgroundImageUrl: updatedUser.backgroundImageUrl,
+    email: null,
+    profileVisibility: "PUBLIC",
+    bio: updateProfileData.bio ?? "",
+    libraryGames: [],
+    recentGames: [],
+    friends: [],
+    totalFriends: 0,
+    relation: null,
+    currentGame: null,
+    hasActiveSubscription: false,
+    karma: 0,
+    quirks: { backupsPerGameLimit: 0 },
+    badges: [],
+    hasCompletedWrapped2025: false,
+  };
 };
 
 registerEvent("updateProfile", updateProfile);

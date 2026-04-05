@@ -98,18 +98,9 @@ export function CloudSyncContextProvider({
       return;
     }
 
-    const params = new URLSearchParams({
-      objectId,
-      shop,
-    });
-
-    const results = await window.electron.hydraApi
-      .get<GameArtifact[]>(`/profile/games/artifacts?${params.toString()}`, {
-        needsSubscription: true,
-      })
-      .catch(() => {
-        return [];
-      });
+    const results = await window.electron
+      .getGameArtifacts(objectId, shop)
+      .catch(() => [] as GameArtifact[]);
     setArtifacts(results);
   }, [objectId, shop]);
 
@@ -148,9 +139,11 @@ export function CloudSyncContextProvider({
     async (gameArtifactId: string, freeze: boolean) => {
       setFreezingArtifact(true);
       try {
-        const endpoint = freeze ? "freeze" : "unfreeze";
-        await window.electron.hydraApi.put(
-          `/profile/games/artifacts/${gameArtifactId}/${endpoint}`
+        await window.electron.toggleArtifactFreeze(
+          objectId,
+          shop,
+          gameArtifactId,
+          freeze
         );
         getGameArtifacts();
       } catch (err) {
@@ -199,14 +192,14 @@ export function CloudSyncContextProvider({
 
   const deleteGameArtifact = useCallback(
     async (gameArtifactId: string) => {
-      return window.electron.hydraApi
-        .delete<{ ok: boolean }>(`/profile/games/artifacts/${gameArtifactId}`)
+      return window.electron
+        .deleteGameArtifact(objectId, shop, gameArtifactId)
         .then(() => {
           getGameBackupPreview();
           getGameArtifacts();
         });
     },
-    [getGameBackupPreview, getGameArtifacts]
+    [objectId, shop, getGameBackupPreview, getGameArtifacts]
   );
 
   useEffect(() => {

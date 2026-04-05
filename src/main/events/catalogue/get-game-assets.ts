@@ -1,18 +1,30 @@
 import type { GameShop, ShopAssets } from "@types";
 import { registerEvent } from "../register-event";
-import { HydraApi } from "@main/services";
 import { gamesShopAssetsSublevel, levelKeys } from "@main/level";
+import { getSteamAppDetails } from "@main/services";
 
 const LOCAL_CACHE_EXPIRATION = 1000 * 60 * 60 * 8; // 8 hours
+
+const buildSteamAssets = (objectId: string, title: string): ShopAssets => ({
+  objectId,
+  shop: "steam",
+  title,
+  iconUrl: `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${objectId}/icon.jpg`,
+  libraryHeroImageUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${objectId}/library_hero.jpg`,
+  libraryImageUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${objectId}/header.jpg`,
+  logoImageUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${objectId}/logo.png`,
+  logoPosition: null,
+  coverImageUrl: `https://shared.steamstatic.com/store_item_assets/steam/apps/${objectId}/library_600x900_2x.jpg`,
+  downloadSources: [],
+});
 
 export const getGameAssets = async (objectId: string, shop: GameShop) => {
   if (shop === "custom") {
     return null;
   }
 
-  const cachedAssets = await gamesShopAssetsSublevel.get(
-    levelKeys.game(shop, objectId)
-  );
+  const cacheKey = levelKeys.game(shop, objectId);
+  const cachedAssets = await gamesShopAssetsSublevel.get(cacheKey);
 
   if (
     cachedAssets &&
@@ -21,27 +33,27 @@ export const getGameAssets = async (objectId: string, shop: GameShop) => {
     return cachedAssets;
   }
 
-  return HydraApi.get<ShopAssets | null>(
-    `/games/${shop}/${objectId}/assets`,
-    null,
-    {
-      needsAuth: false,
-    }
-  ).then(async (assets) => {
-    if (!assets) return null;
+  if (shop === "steam") {
+    // Get title from Steam API or fall back to cached value
+    const title: string =
+      cachedAssets?.title ||
+      (await getSteamAppDetails(objectId, "english").then(
+        (d) => d?.name ?? ""
+      )) ||
+      "";
 
-    // Preserve existing title if it differs from the incoming title (indicating it was customized)
-    const shouldPreserveTitle =
-      cachedAssets?.title && cachedAssets.title !== assets.title;
+    const assets = buildSteamAssets(objectId, title);
 
-    await gamesShopAssetsSublevel.put(levelKeys.game(shop, objectId), {
+    await gamesShopAssetsSublevel.put(cacheKey, {
       ...assets,
-      title: shouldPreserveTitle ? cachedAssets.title : assets.title,
+      title: cachedAssets?.title || assets.title,
       updatedAt: Date.now(),
     });
 
     return assets;
-  });
+  }
+
+  return null;
 };
 
 const getGameAssetsEvent = async (

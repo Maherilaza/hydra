@@ -19,8 +19,6 @@ import {
   Ludusavi,
   Lock,
   DeckyPlugin,
-  DownloadSourcesChecker,
-  WSClient,
   logger,
 } from "@main/services";
 import { migrateDownloadSources } from "./helpers/migrate-download-sources";
@@ -86,15 +84,6 @@ export const loadState = async () => {
   await HydraApi.setupApi().then(async () => {
     uploadGamesBatch();
     void migrateDownloadSources();
-
-    const { syncDownloadSourcesFromApi } = await import("./services/user");
-    void syncDownloadSourcesFromApi();
-
-    // Check for new download options on startup (if enabled)
-    (async () => {
-      await DownloadSourcesChecker.checkForChanges();
-    })();
-    WSClient.connect();
   });
 
   const downloads = await downloadsSublevel

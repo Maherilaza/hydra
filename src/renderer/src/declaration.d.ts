@@ -325,6 +325,27 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<GameArtifact[]>;
+    deleteGameArtifact: (
+      objectId: string,
+      shop: GameShop,
+      gameArtifactId: string
+    ) => Promise<void>;
+    renameGameArtifact: (
+      objectId: string,
+      shop: GameShop,
+      gameArtifactId: string,
+      label: string
+    ) => Promise<GameArtifact>;
+    toggleArtifactFreeze: (
+      objectId: string,
+      shop: GameShop,
+      gameArtifactId: string,
+      freeze: boolean
+    ) => Promise<GameArtifact>;
+    getGameRepacks: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<GameRepack[]>;
     getGameBackupPreview: (
       objectId: string,
       shop: GameShop
